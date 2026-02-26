@@ -9,7 +9,7 @@ import Guest.Eth2.Transition.Block.Header
 
 namespace Eth2
 
-def processEth1Data (state : BeaconState) (body : BeaconBlockBody) : STFResult BeaconState :=
+def processEth1Data (state : BeaconState) (body : BeaconBlockBody) : STFResult BeaconState := do
   let votes := state.eth1DataVotes.push body.eth1Data
   -- Count matching votes
   let mut count : UInt64 := 0

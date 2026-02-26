@@ -27,7 +27,7 @@ private def isPartiallyWithdrawable (validator : Validator) (balance : Gwei) : B
   balance > MAX_EFFECTIVE_BALANCE
 
 -- Compute expected withdrawals (spec: get_expected_withdrawals)
-def getExpectedWithdrawals (state : BeaconState) : Array Withdrawal :=
+def getExpectedWithdrawals (state : BeaconState) : Array Withdrawal := Id.run do
   let epoch := getCurrentEpoch state
   let mut withdrawalIndex := state.nextWithdrawalIndex
   let mut validatorIndex := state.nextWithdrawalValidatorIndex
@@ -36,13 +36,13 @@ def getExpectedWithdrawals (state : BeaconState) : Array Withdrawal :=
   let mut numChecked : Nat := 0
   while numChecked < bound && withdrawals.size < MAX_WITHDRAWALS_PER_PAYLOAD do
     let i := validatorIndex.toNat
-    if h : i < state.validators.size then
-      let validator := state.validators[i]
-      let balance := if h2 : i < state.balances.size then state.balances[i] else 0
+    if i < state.validators.size then
+      let validator := state.validators[i]!
+      let balance := if i < state.balances.size then state.balances[i]! else 0
       if isFullyWithdrawable validator balance epoch then
         let addr := if validator.withdrawalCredentials.size >= 32
           then validator.withdrawalCredentials.extract 12 32
-          else ByteArray.mk (Array.mkArray 20 0)
+          else ByteArray.mk (Array.replicate 20 0)
         withdrawals := withdrawals.push {
           index := withdrawalIndex
           validatorIndex := validatorIndex
@@ -53,7 +53,7 @@ def getExpectedWithdrawals (state : BeaconState) : Array Withdrawal :=
       else if isPartiallyWithdrawable validator balance then
         let addr := if validator.withdrawalCredentials.size >= 32
           then validator.withdrawalCredentials.extract 12 32
-          else ByteArray.mk (Array.mkArray 20 0)
+          else ByteArray.mk (Array.replicate 20 0)
         withdrawals := withdrawals.push {
           index := withdrawalIndex
           validatorIndex := validatorIndex
@@ -65,7 +65,7 @@ def getExpectedWithdrawals (state : BeaconState) : Array Withdrawal :=
       then 0
       else validatorIndex + 1
     numChecked := numChecked + 1
-  withdrawals
+  return withdrawals
 
 def processWithdrawals (state : BeaconState) (payload : ExecutionPayload) : STFResult BeaconState :=
   let expectedWithdrawals := getExpectedWithdrawals state
@@ -73,9 +73,11 @@ def processWithdrawals (state : BeaconState) (payload : ExecutionPayload) : STFR
   if payload.withdrawals.size != expectedWithdrawals.size then
     .error "withdrawals: count mismatch"
   else
-    let mut state := state
-    for withdrawal in expectedWithdrawals do
-      state := decreaseBalance state withdrawal.validatorIndex withdrawal.amount
+    let state := Id.run do
+      let mut state := state
+      for withdrawal in expectedWithdrawals do
+        state := decreaseBalance state withdrawal.validatorIndex withdrawal.amount
+      return state
     -- Update withdrawal indices
     let nextIndex := if expectedWithdrawals.size > 0 then
         match expectedWithdrawals.back? with

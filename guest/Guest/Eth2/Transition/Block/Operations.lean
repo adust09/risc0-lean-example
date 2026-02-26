@@ -16,12 +16,7 @@ namespace Eth2
 -- Helper to fold over an array with a fallible operation
 private def foldSTF (state : BeaconState) (items : Array α)
     (f : BeaconState → α → STFResult BeaconState) : STFResult BeaconState :=
-  let mut s := state
-  for item in items do
-    match f s item with
-    | .ok newState => s := newState
-    | .error msg => return .error msg
-  .ok s
+  items.foldlM (init := state) fun s item => f s item
 
 def processOperations (state : BeaconState) (body : BeaconBlockBody) : STFResult BeaconState := do
   -- Verify deposit count (stub: skip since we don't track eth1 deposit tree)

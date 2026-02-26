@@ -52,12 +52,12 @@ def isSlashableValidator (validator : Validator) (epoch : Epoch) : Bool :=
 -- Active validator queries
 -- ═══════════════════════════════════════════════
 
-def getActiveValidatorIndices (state : BeaconState) (epoch : Epoch) : Array ValidatorIndex :=
-  let mut result := #[]
+def getActiveValidatorIndices (state : BeaconState) (epoch : Epoch) : Array ValidatorIndex := Id.run do
+  let mut result : Array ValidatorIndex := #[]
   for i in [:state.validators.size] do
     if isActiveValidator state.validators[i]! epoch then
       result := result.push i.toUInt64
-  result
+  return result
 
 def getActiveValidatorCount (state : BeaconState) (epoch : Epoch) : UInt64 :=
   (getActiveValidatorIndices state epoch).size.toUInt64
@@ -66,30 +66,30 @@ def getActiveValidatorCount (state : BeaconState) (epoch : Epoch) : UInt64 :=
 -- Balance helpers
 -- ═══════════════════════════════════════════════
 
-def getTotalBalance (state : BeaconState) (indices : Array ValidatorIndex) : Gwei :=
+def getTotalBalance (state : BeaconState) (indices : Array ValidatorIndex) : Gwei := Id.run do
   let mut total : Gwei := 0
   for idx in indices do
     let i := idx.toNat
-    if h : i < state.validators.size then
-      total := total + state.validators[i].effectiveBalance
+    if i < state.validators.size then
+      total := total + state.validators[i]!.effectiveBalance
   -- Spec: return max(EFFECTIVE_BALANCE_INCREMENT, total_balance)
-  if total < EFFECTIVE_BALANCE_INCREMENT then EFFECTIVE_BALANCE_INCREMENT else total
+  return if total < EFFECTIVE_BALANCE_INCREMENT then EFFECTIVE_BALANCE_INCREMENT else total
 
 def getTotalActiveBalance (state : BeaconState) : Gwei :=
   getTotalBalance state (getActiveValidatorIndices state (getCurrentEpoch state))
 
 def increaseBalance (state : BeaconState) (index : ValidatorIndex) (delta : Gwei) : BeaconState :=
   let i := index.toNat
-  if h : i < state.balances.size then
-    { state with balances := state.balances.set ⟨i, h⟩ (state.balances[i] + delta) }
+  if i < state.balances.size then
+    { state with balances := state.balances.set! i (state.balances[i]! + delta) }
   else state
 
 def decreaseBalance (state : BeaconState) (index : ValidatorIndex) (delta : Gwei) : BeaconState :=
   let i := index.toNat
-  if h : i < state.balances.size then
-    let current := state.balances[i]
+  if i < state.balances.size then
+    let current := state.balances[i]!
     let newBal := if current >= delta then current - delta else 0
-    { state with balances := state.balances.set ⟨i, h⟩ newBal }
+    { state with balances := state.balances.set! i newBal }
   else state
 
 -- ═══════════════════════════════════════════════
@@ -97,15 +97,14 @@ def decreaseBalance (state : BeaconState) (index : ValidatorIndex) (delta : Gwei
 -- ═══════════════════════════════════════════════
 
 -- Integer square root (spec: integer_squareroot)
-def integerSquareroot (n : UInt64) : UInt64 :=
-  if n == 0 then 0
-  else
-    let mut x := n
-    let mut y := (x + 1) / 2
-    while y < x do
-      x := y
-      y := (x + n / x) / 2
-    x
+partial def integerSquareroot (n : UInt64) : UInt64 := Id.run do
+  if n == 0 then return 0
+  let mut x := n
+  let mut y := (x + 1) / 2
+  while y < x do
+    x := y
+    y := (x + n / x) / 2
+  return x
 
 def getBaseRewardPerIncrement (state : BeaconState) : Gwei :=
   let totalBalance := getTotalActiveBalance state
@@ -115,8 +114,8 @@ def getBaseRewardPerIncrement (state : BeaconState) : Gwei :=
 
 def getBaseReward (state : BeaconState) (index : ValidatorIndex) : Gwei :=
   let i := index.toNat
-  if h : i < state.validators.size then
-    let increments := state.validators[i].effectiveBalance / EFFECTIVE_BALANCE_INCREMENT
+  if i < state.validators.size then
+    let increments := state.validators[i]!.effectiveBalance / EFFECTIVE_BALANCE_INCREMENT
     increments * getBaseRewardPerIncrement state
   else 0
 
@@ -131,40 +130,39 @@ def getValidatorChurnLimit (state : BeaconState) : UInt64 :=
   if churn < MIN_PER_EPOCH_CHURN_LIMIT then MIN_PER_EPOCH_CHURN_LIMIT else churn
 
 -- Initiate validator exit (assigns exit_epoch and withdrawable_epoch)
-def initiateValidatorExit (state : BeaconState) (index : ValidatorIndex) : BeaconState :=
+def initiateValidatorExit (state : BeaconState) (index : ValidatorIndex) : BeaconState := Id.run do
   let i := index.toNat
-  if h : i < state.validators.size then
-    let validator := state.validators[i]
-    -- Already initiated
-    if validator.exitEpoch != FAR_FUTURE_EPOCH then state
-    else
-      -- Find the maximum exit epoch among all validators
-      let currentEpoch := getCurrentEpoch state
-      let mut exitEpoch := computeEpochAtSlot (computeStartSlotAtEpoch currentEpoch)
-      for v in state.validators do
-        if v.exitEpoch != FAR_FUTURE_EPOCH && v.exitEpoch > exitEpoch then
-          exitEpoch := v.exitEpoch
-      -- Bump if at churn limit
-      let churnLimit := getValidatorChurnLimit state
-      let mut exitCount : UInt64 := 0
-      for v in state.validators do
-        if v.exitEpoch == exitEpoch then
-          exitCount := exitCount + 1
-      if exitCount >= churnLimit then
-        exitEpoch := exitEpoch + 1
-      let withdrawableEpoch := exitEpoch + MIN_VALIDATOR_WITHDRAWABILITY_DELAY
-      let newValidator := { validator with
-        exitEpoch := exitEpoch
-        withdrawableEpoch := withdrawableEpoch
-      }
-      { state with validators := state.validators.set ⟨i, h⟩ newValidator }
-  else state
+  if i >= state.validators.size then return state
+  let validator := state.validators[i]!
+  -- Already initiated
+  if validator.exitEpoch != FAR_FUTURE_EPOCH then return state
+  -- Find the maximum exit epoch among all validators
+  let currentEpoch := getCurrentEpoch state
+  let mut exitEpoch := computeEpochAtSlot (computeStartSlotAtEpoch currentEpoch)
+  for v in state.validators do
+    if v.exitEpoch != FAR_FUTURE_EPOCH && v.exitEpoch > exitEpoch then
+      exitEpoch := v.exitEpoch
+  -- Bump if at churn limit
+  let churnLimit := getValidatorChurnLimit state
+  let mut exitCount : UInt64 := 0
+  for v in state.validators do
+    if v.exitEpoch == exitEpoch then
+      exitCount := exitCount + 1
+  if exitCount >= churnLimit then
+    exitEpoch := exitEpoch + 1
+  let withdrawableEpoch := exitEpoch + MIN_VALIDATOR_WITHDRAWABILITY_DELAY
+  let newValidator := { validator with
+    exitEpoch := exitEpoch
+    withdrawableEpoch := withdrawableEpoch
+  }
+  return { state with validators := state.validators.set! i newValidator }
 
 -- Slash a validator (mark as slashed, initiate exit, apply penalty)
 def slashValidator (state : BeaconState) (slashedIndex : ValidatorIndex)
     (whistleblowerIndex : Option ValidatorIndex) : BeaconState :=
   let i := slashedIndex.toNat
-  if h : i < state.validators.size then
+  if i >= state.validators.size then state
+  else
     let epoch := getCurrentEpoch state
     -- Initiate exit first
     let state := initiateValidatorExit state slashedIndex
@@ -176,13 +174,13 @@ def slashValidator (state : BeaconState) (slashedIndex : ValidatorIndex)
         let we := epoch + EPOCHS_PER_SLASHINGS_VECTOR
         if we > validator.withdrawableEpoch then we else validator.withdrawableEpoch
     }
-    let state := { state with validators := state.validators.set ⟨i, h⟩ newValidator }
+    let state := { state with validators := state.validators.set! i newValidator }
     -- Record slashing in slashings vector
     let slashingsIdx := (epoch % EPOCHS_PER_SLASHINGS_VECTOR).toNat
     let state :=
-      if h2 : slashingsIdx < state.slashings.size then
-        { state with slashings := state.slashings.set ⟨slashingsIdx, h2⟩
-            (state.slashings[slashingsIdx] + newValidator.effectiveBalance) }
+      if slashingsIdx < state.slashings.size then
+        let newSlashing := state.slashings[slashingsIdx]! + newValidator.effectiveBalance
+        { state with slashings := state.slashings.set! slashingsIdx newSlashing }
       else state
     -- Apply minimum penalty
     let penalty := newValidator.effectiveBalance / MIN_SLASHING_PENALTY_QUOTIENT_BELLATRIX
@@ -193,7 +191,6 @@ def slashValidator (state : BeaconState) (slashedIndex : ValidatorIndex)
     let proposerReward := whistleblowerReward * PROPOSER_WEIGHT / WEIGHT_DENOMINATOR
     let state := increaseBalance state proposerIndex proposerReward
     state
-  else state
 
 -- ═══════════════════════════════════════════════
 -- Participation flag helpers (Altair)
@@ -214,16 +211,16 @@ def addFlag (flags : ParticipationFlags) (flagIndex : Nat) : ParticipationFlags 
 -- Get the randao mix for a given epoch
 def getRandaoMix (state : BeaconState) (epoch : Epoch) : Bytes32 :=
   let idx := (epoch % EPOCHS_PER_HISTORICAL_VECTOR).toNat
-  if h : idx < state.randaoMixes.size then
-    state.randaoMixes[idx]
-  else ByteArray.mk (Array.mkArray 32 0)
+  if idx < state.randaoMixes.size then
+    state.randaoMixes[idx]!
+  else ByteArray.mk (Array.replicate 32 0)
 
 -- Get block root at slot (from circular buffer)
 def getBlockRootAtSlot (state : BeaconState) (slot : Slot) : Root :=
   let idx := (slot % SLOTS_PER_HISTORICAL_ROOT).toNat
-  if h : idx < state.blockRoots.size then
-    state.blockRoots[idx]
-  else ByteArray.mk (Array.mkArray 32 0)
+  if idx < state.blockRoots.size then
+    state.blockRoots[idx]!
+  else ByteArray.mk (Array.replicate 32 0)
 
 -- Get block root at epoch (returns root at start slot of epoch)
 def getBlockRoot (state : BeaconState) (epoch : Epoch) : Root :=
@@ -236,7 +233,7 @@ def getBeaconProposerIndex (state : BeaconState) : ValidatorIndex :=
   if activeIndices.size == 0 then 0
   else
     let idx := (state.slot % activeIndices.size.toUInt64).toNat
-    if h : idx < activeIndices.size then activeIndices[idx]
+    if idx < activeIndices.size then activeIndices[idx]!
     else 0
 
 end Eth2

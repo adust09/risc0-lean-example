@@ -50,13 +50,13 @@ def processBlockHeader (state : BeaconState) (block : BeaconBlock) : STFResult B
       slot := block.slot
       proposerIndex := block.proposerIndex
       parentRoot := block.parentRoot
-      stateRoot := ByteArray.mk (Array.mkArray 32 0)  -- overwritten later
+      stateRoot := ByteArray.mk (Array.replicate 32 0)  -- overwritten later
       bodyRoot := hashTreeRoot (ByteArray.mk #[])      -- stub
     }
     -- Verify proposer is not slashed
     let proposerIdx := block.proposerIndex.toNat
-    if h : proposerIdx < state.validators.size then
-      if state.validators[proposerIdx].slashed then
+    if proposerIdx < state.validators.size then
+      if state.validators[proposerIdx]!.slashed then
         .error "proposer is slashed"
       else
         .ok { state with latestBlockHeader := header }
@@ -66,12 +66,12 @@ def processBlockHeader (state : BeaconState) (block : BeaconBlock) : STFResult B
       slot := block.slot
       proposerIndex := block.proposerIndex
       parentRoot := block.parentRoot
-      stateRoot := ByteArray.mk (Array.mkArray 32 0)
+      stateRoot := ByteArray.mk (Array.replicate 32 0)
       bodyRoot := hashTreeRoot (ByteArray.mk #[])
     }
     let proposerIdx := block.proposerIndex.toNat
-    if h : proposerIdx < state.validators.size then
-      if state.validators[proposerIdx].slashed then
+    if proposerIdx < state.validators.size then
+      if state.validators[proposerIdx]!.slashed then
         .error "proposer is slashed"
       else
         .ok { state with latestBlockHeader := header }

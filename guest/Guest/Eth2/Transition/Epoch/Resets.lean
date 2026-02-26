@@ -23,8 +23,8 @@ def processEth1DataReset (state : BeaconState) : BeaconState :=
 def processSlashingsReset (state : BeaconState) : BeaconState :=
   let nextEpoch := getCurrentEpoch state + 1
   let idx := (nextEpoch % EPOCHS_PER_SLASHINGS_VECTOR).toNat
-  if h : idx < state.slashings.size then
-    { state with slashings := state.slashings.set ⟨idx, h⟩ 0 }
+  if idx < state.slashings.size then
+    { state with slashings := state.slashings.set! idx 0 }
   else state
 
 -- Copy current epoch's randao mix to next epoch's slot
@@ -33,8 +33,8 @@ def processRandaoMixesReset (state : BeaconState) : BeaconState :=
   let nextEpoch := currentEpoch + 1
   let currentMix := getRandaoMix state currentEpoch
   let idx := (nextEpoch % EPOCHS_PER_HISTORICAL_VECTOR).toNat
-  if h : idx < state.randaoMixes.size then
-    { state with randaoMixes := state.randaoMixes.set ⟨idx, h⟩ currentMix }
+  if idx < state.randaoMixes.size then
+    { state with randaoMixes := state.randaoMixes.set! idx currentMix }
   else state
 
 end Eth2

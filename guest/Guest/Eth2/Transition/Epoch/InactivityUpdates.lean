@@ -14,36 +14,35 @@ def isInInactivityLeak (state : BeaconState) : Bool :=
   let finalizedEpoch := state.finalizedCheckpoint.epoch
   currentEpoch > finalizedEpoch + MIN_EPOCHS_TO_INACTIVITY_PENALTY
 
-def processInactivityUpdates (state : BeaconState) : BeaconState :=
+def processInactivityUpdates (state : BeaconState) : BeaconState := Id.run do
   let currentEpoch := getCurrentEpoch state
   -- Skip genesis epoch
-  if currentEpoch == 0 then state
-  else
-    let previousEpoch := getPreviousEpoch state
-    let activeIndices := getActiveValidatorIndices state currentEpoch
-    let inLeak := isInInactivityLeak state
-    let mut scores := state.inactivityScores
-    for idx in activeIndices do
-      let i := idx.toNat
-      if h : i < scores.size then
-        let score := scores[i]
-        -- Check if validator had timely target participation in previous epoch
-        let participated :=
-          if h2 : i < state.previousEpochParticipation.size then
-            hasFlag state.previousEpochParticipation[i] TIMELY_TARGET_FLAG_INDEX
-          else false
-        let newScore :=
-          if participated then
-            -- Decrease score towards 0
-            if score >= INACTIVITY_SCORE_RECOVERY_RATE then
-              score - INACTIVITY_SCORE_RECOVERY_RATE
-            else 0
-          else
-            -- Increase score if in leak
-            if inLeak then score + INACTIVITY_SCORE_BIAS
-            else score
-        scores := scores.set ⟨i, h⟩ newScore
-    -- Ignore previousEpoch usage warning - it's used conceptually
-    { state with inactivityScores := scores }
+  if currentEpoch == 0 then return state
+  let previousEpoch := getPreviousEpoch state
+  let activeIndices := getActiveValidatorIndices state currentEpoch
+  let inLeak := isInInactivityLeak state
+  let mut scores := state.inactivityScores
+  for idx in activeIndices do
+    let i := idx.toNat
+    if i < scores.size then
+      let score := scores[i]!
+      -- Check if validator had timely target participation in previous epoch
+      let participated :=
+        if i < state.previousEpochParticipation.size then
+          hasFlag state.previousEpochParticipation[i]! TIMELY_TARGET_FLAG_INDEX
+        else false
+      let newScore :=
+        if participated then
+          -- Decrease score towards 0
+          if score >= INACTIVITY_SCORE_RECOVERY_RATE then
+            score - INACTIVITY_SCORE_RECOVERY_RATE
+          else 0
+        else
+          -- Increase score if in leak
+          if inLeak then score + INACTIVITY_SCORE_BIAS
+          else score
+      scores := scores.set! i newScore
+  -- Ignore previousEpoch usage warning - it's used conceptually
+  return { state with inactivityScores := scores }
 
 end Eth2

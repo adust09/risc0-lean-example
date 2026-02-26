@@ -30,17 +30,19 @@ def processAttesterSlashing (state : BeaconState) (slashing : AttesterSlashing) 
   else
     -- Stub: skip signature verification on indexed attestations
     -- Find intersection of attesting indices
-    let mut state := state
-    let mut slashedAny := false
-    for idx1 in att1.attestingIndices do
-      for idx2 in att2.attestingIndices do
-        if idx1 == idx2 then
-          let i := idx1.toNat
-          if h : i < state.validators.size then
-            if isSlashableValidator state.validators[i] (getCurrentEpoch state) then
-              state := slashValidator state idx1 none
-              slashedAny := true
-    if slashedAny then .ok state
+    let result := Id.run do
+      let mut state := state
+      let mut slashedAny := false
+      for idx1 in att1.attestingIndices do
+        for idx2 in att2.attestingIndices do
+          if idx1 == idx2 then
+            let i := idx1.toNat
+            if i < state.validators.size then
+              if isSlashableValidator state.validators[i]! (getCurrentEpoch state) then
+                state := slashValidator state idx1 none
+                slashedAny := true
+      return (state, slashedAny)
+    if result.2 then .ok result.1
     else .error "attester slashing: no validators slashed"
 
 end Eth2

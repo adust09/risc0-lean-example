@@ -8,7 +8,7 @@ import Guest.Eth2.Helpers
 
 namespace Eth2
 
-def processSlashings (state : BeaconState) : BeaconState :=
+def processSlashings (state : BeaconState) : BeaconState := Id.run do
   let currentEpoch := getCurrentEpoch state
   let totalBalance := getTotalActiveBalance state
   -- Sum all slashings across the vector
@@ -21,14 +21,14 @@ def processSlashings (state : BeaconState) : BeaconState :=
     if scaled > totalBalance then totalBalance else scaled
   let mut state := state
   for i in [:state.validators.size] do
-    if h : i < state.validators.size then
-      let validator := state.validators[i]
+    if i < state.validators.size then
+      let validator := state.validators[i]!
       if validator.slashed &&
          currentEpoch + EPOCHS_PER_SLASHINGS_VECTOR / 2 == validator.withdrawableEpoch then
         let increment := EFFECTIVE_BALANCE_INCREMENT
         let penaltyNumerator := validator.effectiveBalance / increment * adjustedTotalSlashingBalance
         let penalty := penaltyNumerator / totalBalance * increment
         state := decreaseBalance state i.toUInt64 penalty
-  state
+  return state
 
 end Eth2

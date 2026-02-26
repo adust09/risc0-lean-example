@@ -10,20 +10,20 @@ import Guest.Eth2.Transition.Block.Header
 namespace Eth2
 
 -- Apply a deposit: either add a new validator or top up an existing one
-private def applyDeposit (state : BeaconState) (deposit : Deposit) : BeaconState :=
+private def applyDeposit (state : BeaconState) (deposit : Deposit) : BeaconState := Id.run do
   let pubkey := deposit.data.pubkey
   let amount := deposit.data.amount
   -- Search for existing validator with this pubkey
   let mut existingIdx : Option Nat := none
   for i in [:state.validators.size] do
-    if h : i < state.validators.size then
-      if state.validators[i].pubkey == pubkey then
+    if i < state.validators.size then
+      if state.validators[i]!.pubkey == pubkey then
         existingIdx := some i
         break
   match existingIdx with
   | some idx =>
     -- Top up existing validator
-    increaseBalance state idx.toUInt64 amount
+    return increaseBalance state idx.toUInt64 amount
   | none =>
     -- Add new validator
     let validator : Validator := {
@@ -36,7 +36,7 @@ private def applyDeposit (state : BeaconState) (deposit : Deposit) : BeaconState
       exitEpoch := FAR_FUTURE_EPOCH
       withdrawableEpoch := FAR_FUTURE_EPOCH
     }
-    { state with
+    return { state with
       validators := state.validators.push validator
       balances := state.balances.push amount
       previousEpochParticipation := state.previousEpochParticipation.push 0

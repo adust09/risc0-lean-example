@@ -10,31 +10,31 @@ namespace Eth2
 
 -- Get bit from justification bitvector (bit 0 = current epoch - 1)
 private def getJustificationBit (bits : ByteArray) (index : Nat) : Bool :=
-  if h : 0 < bits.size then
-    let byte := bits.get ⟨0, h⟩
+  if 0 < bits.size then
+    let byte := bits.get! 0
     (byte.toNat >>> index) &&& 1 == 1
   else false
 
 -- Set bit in justification bitvector
 private def setJustificationBit (bits : ByteArray) (index : Nat) : ByteArray :=
-  if h : 0 < bits.size then
-    let byte := bits.get ⟨0, h⟩
+  if 0 < bits.size then
+    let byte := bits.get! 0
     let newByte := byte ||| (1 <<< index).toUInt8
-    bits.set ⟨0, h⟩ newByte
+    bits.set! 0 newByte
   else bits
 
 -- Shift justification bits left by 1 (new epoch enters at bit 0)
 private def shiftJustificationBits (bits : ByteArray) : ByteArray :=
-  if h : 0 < bits.size then
-    let byte := bits.get ⟨0, h⟩
+  if 0 < bits.size then
+    let byte := bits.get! 0
     -- Shift left by 1, mask to 4 bits
     let newByte := (byte <<< 1) &&& 0x0F
-    bits.set ⟨0, h⟩ newByte
+    bits.set! 0 newByte
   else bits
 
 -- Compute total balance of validators with a specific participation flag set
 private def getParticipatingBalance (state : BeaconState) (epoch : Epoch)
-    (flagIndex : Nat) : Gwei :=
+    (flagIndex : Nat) : Gwei := Id.run do
   let participation := if epoch == getCurrentEpoch state
     then state.currentEpochParticipation
     else state.previousEpochParticipation
@@ -42,10 +42,10 @@ private def getParticipatingBalance (state : BeaconState) (epoch : Epoch)
   let mut total : Gwei := 0
   for idx in activeIndices do
     let i := idx.toNat
-    if h : i < participation.size then
-      if hasFlag participation[i] flagIndex then
-        if h2 : i < state.validators.size then
-          total := total + state.validators[i].effectiveBalance
+    if i < participation.size then
+      if hasFlag participation[i]! flagIndex then
+        if i < state.validators.size then
+          total := total + state.validators[i]!.effectiveBalance
   if total < EFFECTIVE_BALANCE_INCREMENT then EFFECTIVE_BALANCE_INCREMENT else total
 
 def processJustificationAndFinalization (state : BeaconState) : BeaconState :=

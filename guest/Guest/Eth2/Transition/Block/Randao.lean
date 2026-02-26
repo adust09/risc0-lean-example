@@ -11,12 +11,12 @@ import Guest.Eth2.Transition.Block.Header
 namespace Eth2
 
 -- XOR two byte arrays of equal length
-private def xorBytes (a b : ByteArray) : ByteArray :=
+private def xorBytes (a b : ByteArray) : ByteArray := Id.run do
   let len := min a.size b.size
-  let mut result := ByteArray.mkEmpty len
+  let mut result := ByteArray.emptyWithCapacity len
   for i in [:len] do
     result := result.push (a.get! i ^^^ b.get! i)
-  result
+  return result
 
 def processRandao (state : BeaconState) (body : BeaconBlockBody) : STFResult BeaconState :=
   -- Stub: skip RANDAO reveal BLS verification
@@ -27,8 +27,8 @@ def processRandao (state : BeaconState) (body : BeaconBlockBody) : STFResult Bea
   let revealHash := hashTreeRoot body.randaoReveal
   let newMix := xorBytes mix revealHash
   let idx := (currentEpoch % EPOCHS_PER_HISTORICAL_VECTOR).toNat
-  if h : idx < state.randaoMixes.size then
-    .ok { state with randaoMixes := state.randaoMixes.set ⟨idx, h⟩ newMix }
+  if idx < state.randaoMixes.size then
+    .ok { state with randaoMixes := state.randaoMixes.set! idx newMix }
   else .error "randao mix index out of range"
 
 end Eth2
