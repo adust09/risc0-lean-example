@@ -11,7 +11,7 @@ namespace Eth2
 
 def processSyncAggregate (state : BeaconState) (aggregate : SyncAggregate) : STFResult BeaconState := do
   -- Stub: skip BLS aggregate signature verification
-  let totalActiveBalance := getTotalActiveBalance state
+  let _totalActiveBalance := getTotalActiveBalance state
   let totalParticipants := SYNC_COMMITTEE_SIZE
   -- Count participating committee members
   let mut numParticipants : UInt64 := 0

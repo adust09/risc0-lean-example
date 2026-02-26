@@ -18,7 +18,7 @@ def processInactivityUpdates (state : BeaconState) : BeaconState := Id.run do
   let currentEpoch := getCurrentEpoch state
   -- Skip genesis epoch
   if currentEpoch == 0 then return state
-  let previousEpoch := getPreviousEpoch state
+  let _previousEpoch := getPreviousEpoch state
   let activeIndices := getActiveValidatorIndices state currentEpoch
   let inLeak := isInInactivityLeak state
   let mut scores := state.inactivityScores

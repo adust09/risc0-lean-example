@@ -52,7 +52,7 @@ partial def processSlots (state : BeaconState) (targetSlot : Slot) : STFResult B
 
 -- Full state transition: advance slots + process block
 def stateTransition (state : BeaconState) (signedBlock : SignedBeaconBlock)
-    (validateResult : Bool := true) : STFResult BeaconState := do
+    (_validateResult : Bool := true) : STFResult BeaconState := do
   let block := signedBlock.message
   -- Process slots up to the block's slot
   let state ← processSlots state block.slot
