@@ -1,185 +1,196 @@
-# Lean ゲスト オーバーヘッド分析
+# Lean vs Rust zkVM パフォーマンス比較
 
-RISC Zero zkVM 上で Lean 4 コードを実行した際のパフォーマンスオーバーヘッドを、
-同等の純 Rust 実装と比較して分析する。
+## 目的
 
-## ベンチマーク概要
+RISC Zero zkVM 上で同一アルゴリズムを Lean 4 と Rust で実装し、zkVM サイクル数（= 証明コスト）を比較する。
 
-**テスト関数:** `sum(n) = if n == 0 then 0 else (n + sum(n-1)) &&& 0xFFFF`
+## 計測対象
 
-両ゲストは同一のアルゴリズムを計算する。Lean ゲストは Lean → C → RISC-V の
-フルパイプラインを経由し、Rust ゲストは直接実装である。
+再帰的な `sum` 関数。16ビットマスク付きで Lean/Rust 間の出力一致を保証する。
 
-**方式:** UInt32 直接 FFI（Init ライブラリ初期化をスキップ）
-
-## 結果
-
-### 実行モード（証明なし）
-
-| ゲスト | N | ユーザーサイクル | セグメント | 実行時間 |
-|--------|------:|-----------:|---------:|---------:|
-| Lean   |    10 |      3,596 |        1 |   9.8s   |
-| Rust   |    10 |      3,736 |        1 |    37ms  |
-| **倍率** | | **1.0x** | **1.0x** | **~265x** |
-| | | | | |
-| Lean   |   100 |      4,946 |        1 |   9.8s   |
-| Rust   |   100 |      5,176 |        1 |    38ms  |
-| **倍率** | | **1.0x** | **1.0x** | **~258x** |
-| | | | | |
-| Lean   | 1,000 |     18,446 |        1 |  11.5s   |
-| Rust   | 1,000 |     19,576 |        1 |    39ms  |
-| **倍率** | | **0.9x** | **1.0x** | **~294x** |
-| | | | | |
-| Lean   | 5,000 |     78,446 |        1 |   9.8s   |
-| Rust   | 5,000 |     83,576 |        1 |    53ms  |
-| **倍率** | | **0.9x** | **1.0x** | **~186x** |
-| | | | | |
-| Lean   | 10,000 |   153,446 |        1 |  10.4s   |
-| Rust   | 10,000 |   163,576 |        1 |    58ms  |
-| **倍率** | | **0.9x** | **1.0x** | **~179x** |
-
-### 1再帰あたりのサイクル単価
-
-| | Lean | Rust |
-|--|-----:|-----:|
-| 基底サイクル（N=0 相当） | ~2,246 | ~2,236 |
-| 1再帰あたり追加サイクル | ~15.1 | ~16.0 |
-
-算出: (153,446 - 3,596) / (10,000 - 10) ≈ 15.1（Lean）、(163,576 - 3,736) / (10,000 - 10) ≈ 16.0（Rust）
-
-Lean の方が1再帰あたり約6%効率的であり、N が大きいほど倍率が 1.0x → 0.9x に改善する理由を説明する。
-
-### ELF バイナリサイズ
-
-| | Lean | Rust | 倍率 |
-|--|-----:|-----:|-----:|
-| ELF サイズ | 1,536,296 bytes (1.5 MB) | 276,472 bytes (270 KB) | **5.6x** |
-
-## 分析
-
-### サイクル数: Lean ≈ Rust（倍率 0.9x〜1.0x）
-
-UInt32 直接 FFI 方式により、Lean と Rust のサイクル数はほぼ同一となった。
-Lean が若干少ないサイクルで実行されるケースもある（0.9x）。
-
-**理由:** Lean の `UInt32` はアンボックス化された機械整数にコンパイルされる。
-生成される C IR は Rust の実装とほぼ等価である。
-
-**Lean C IR** (`guest_build/risc0_ir/Guest/Basic.c`):
-
-```c
-LEAN_EXPORT uint32_t l_sum(uint32_t x_1) {
-    x_2 = 0;
-    x_3 = lean_uint32_dec_eq(x_1, x_2);
-    if (x_3 == 0) {
-        x_5 = lean_uint32_sub(x_1, 1);
-        x_6 = l_sum(x_5);
-        x_7 = lean_uint32_add(x_1, x_6);
-        x_9 = lean_uint32_land(x_7, 65535);
-        return x_9;
-    }
-    return x_2;
-}
+```
+sum(n) = if n == 0 then 0 else (n + sum(n - 1)) &&& 0xFFFF
 ```
 
-**同等の Rust 実装** (`methods/guest-rust/src/main.rs`):
+**Lean 実装** (`guest/Guest/Basic.lean`):
+```lean
+partial def sum (n : UInt32) : UInt32 :=
+  if n == 0 then 0 else (n + sum (n - 1)) &&& 0xFFFF
+```
 
+**Rust 実装** (`methods/guest-rust/src/main.rs`):
 ```rust
 fn sum(n: u32) -> u32 {
     if n == 0 { 0 } else { (n + sum(n - 1)) & 0xFFFF }
 }
 ```
 
-ヒープ割り当て: 0回、参照カウント: 0回、型変換: 0回。
-`lean_uint32_*` 関数はインラインの機械整数操作であり、
-Rust のネイティブ演算と同等のパフォーマンスを示す。
+## パイプライン
 
-### 壁時計時間の差異
-
-サイクル数が同一であるにもかかわらず、壁時計時間には大きな差がある
-（~10s vs ~50ms、~200x）。これはホスト側のオーバーヘッドであり、
-zkVM の証明コストとは無関係である。
-
-| 要因 | 影響 |
-|------|------|
-| ELF サイズ差（5.6x） | ホスト側の ELF ロード・セットアップ時間が増加 |
-| Init ライブラリのリンク | ELF に含まれるが実行されない（呼び出さないだけ） |
-| zkVM 証明コスト | サイクル数に比例 → Lean と Rust はほぼ同一 |
-
-### FFI アーキテクチャ
+Lean ゲストは Lean → C → RISC-V の変換パイプラインを経由する。Rust ゲストは直接コンパイルされる。
 
 ```
-Rust guest → extern "C" lean_simple_risc0_main(u32) → risc0_main(uint32_t) → l_sum(uint32_t)
+Lean:  Lean 4 → lake build → C IR → CMake (riscv32-gcc) → libGuest.a → Rust FFI → zkVM ELF
+Rust:  Rust → cargo build (risc0-zkvm) → zkVM ELF
 ```
 
-Init ランタイム初期化をスキップし、`risc0_main` を直接呼び出す。
-`UInt32` は C ABI で `uint32_t` として直接渡されるため、マーシャリングが不要。
+呼び出しチェーン:
 
-## 旧方式との比較
+```
+[Rust ゲスト]                           [Lean ゲスト]
+env::read::<u32>()                      env::read::<u32>()
+sum(input)                              lean_simple_risc0_main(input)  // C FFI
+env::commit(&result)                      → risc0_main(uint32_t)       // Lean exported
+                                            → l_sum(uint32_t)          // Lean compiled
+                                        env::commit(&value)
+```
 
-| | 旧方式 (Nat + Init) | 新方式 (UInt32, Init スキップ) |
-|--|:--:|:--:|
-| Lean/Rust サイクル倍率 | **~1,000x** | **~1.0x** |
+## 計測結果
+
+`just bench-execute`（execute モード、証明生成なし）で計測。3回実行の中央値。
+
+| ゲスト | N | ユーザーサイクル | セグメント | 壁時計時間 |
+|--------|------:|-----------:|---------:|---------:|
+| Lean   |    10 |      3,596 |        1 |   9.8s   |
+| Rust   |    10 |      3,736 |        1 |    37ms  |
+| **比率** | | **0.96x** | **1.0x** | |
+| | | | | |
+| Lean   |   100 |      4,946 |        1 |   9.8s   |
+| Rust   |   100 |      5,176 |        1 |    38ms  |
+| **比率** | | **0.96x** | **1.0x** | |
+| | | | | |
+| Lean   | 1,000 |     18,446 |        1 |  11.5s   |
+| Rust   | 1,000 |     19,576 |        1 |    39ms  |
+| **比率** | | **0.94x** | **1.0x** | |
+| | | | | |
+| Lean   | 5,000 |     78,446 |        1 |   9.8s   |
+| Rust   | 5,000 |     83,576 |        1 |    53ms  |
+| **比率** | | **0.94x** | **1.0x** | |
+| | | | | |
+| Lean   | 10,000 |   153,446 |        1 |  10.4s   |
+| Rust   | 10,000 |   163,576 |        1 |    58ms  |
+| **比率** | | **0.94x** | **1.0x** | |
+
+**比率は Lean/Rust。1.0 未満は Lean の方がサイクル数が少ないことを意味する。**
+
+### ELF サイズ
+
+| | Lean | Rust | 比率 |
+|--|-----:|-----:|-----:|
+| ELF | 1,536,296 bytes (1.5 MB) | 276,472 bytes (270 KB) | 5.6x |
+
+## 考察
+
+### サイクル数が同等である理由
+
+Lean の `UInt32` 型はアンボックス化された機械整数としてコンパイルされる。生成される C コードは Rust と構造的に等価である。
+
+Lean コンパイラが生成した C IR（`guest_build/risc0_ir/Guest/Basic.c`）:
+
+```c
+LEAN_EXPORT uint32_t l_sum(uint32_t x_1) {
+  uint32_t x_2; uint8_t x_3;
+  x_2 = 0;
+  x_3 = lean_uint32_dec_eq(x_1, x_2);
+  if (x_3 == 0) {
+    uint32_t x_4; uint32_t x_5; uint32_t x_6; uint32_t x_7; uint32_t x_8; uint32_t x_9;
+    x_4 = 1;
+    x_5 = lean_uint32_sub(x_1, x_4);
+    x_6 = l_sum(x_5);
+    x_7 = lean_uint32_add(x_1, x_6);
+    x_8 = 65535;
+    x_9 = lean_uint32_land(x_7, x_8);
+    return x_9;
+  } else {
+    return x_2;
+  }
+}
+```
+
+`lean_uint32_add` 等はインラインの機械整数演算であり、ヒープ割り当ても参照カウントも発生しない。
+
+### 1再帰あたりのサイクル単価
+
+N=10 と N=10,000 の差分から1再帰あたりのコストを算出:
+
+| | Lean | Rust |
+|--|-----:|-----:|
+| 1再帰あたり | (153,446 - 3,596) / 9,990 ≈ **15.0** | (163,576 - 3,736) / 9,990 ≈ **16.0** |
+
+Lean が Rust より約6%少ないサイクルで各再帰を実行している。N が大きくなるほどこの差が蓄積し、比率が 0.96x → 0.94x へ推移する。
+
+### 壁時計時間がサイクル数と乖離する理由
+
+壁時計時間は Lean ~10s / Rust ~40ms と約250倍の差がある。これはホスト側（zkVM の外）で発生する ELF ロード・セットアップ時間の差であり、ゲスト内の実行サイクル数とは無関係である。
+
+要因:
+- Lean ELF は 1.5 MB、Rust ELF は 270 KB（5.6倍）
+- Init ライブラリはリンクされているが実行時には呼び出されない（サイズのみ影響）
+- zkVM の証明コストはサイクル数に比例するため、**証明コストは Lean ≈ Rust**
+
+### Init ライブラリを呼び出さない仕組み
+
+C ラッパー (`methods/guest/risc0_lean.c`) が `risc0_main` を直接呼び出す:
+
+```c
+extern uint32_t risc0_main(uint32_t input);
+
+uint32_t lean_simple_risc0_main(uint32_t n) {
+    return risc0_main(n);
+}
+```
+
+生成された C IR には `initialize_Init()` を呼ぶ `initialize_Guest()` 関数が存在するが、この関数を呼び出さないため Init の初期化コード（392モジュール、~410万サイクル）は一切実行されない。ただし `libInit.a` はリンカの依存解決で ELF に含まれる。
+
+### 制約事項
+
+Init ライブラリの初期化をスキップしているため、以下の Lean 機能は使用できない:
+
+- `String`, `List`, `Array` 等の Init に依存する型
+- `IO` モナドとそれに依存する機能
+- `Nat`（ヒープ割り当てが必要）
+- 文字列リテラル
+
+使用可能なのは `UInt8`, `UInt16`, `UInt32`, `UInt64`, `Bool` 等のアンボックス型に限定される。
+
+## 付録: 旧方式の結果
+
+以前の方式では `Nat` + `ByteArray` FFI + Init 初期化を使用していた。
+
+| ゲスト | N | ユーザーサイクル | セグメント |
+|--------|------:|-----------:|---------:|
+| Lean   |    10 |  4,119,771 |        5 |
+| Rust   |    10 |      3,736 |        1 |
+| **比率** | | **1,102.7x** | **5.0x** |
+| | | | |
+| Lean   |   100 |  4,124,252 |        5 |
+| Rust   |   100 |      5,176 |        1 |
+| **比率** | | **796.8x** | **5.0x** |
+| | | | |
+| Lean   | 1,000 |  4,161,410 |        6 |
+| Rust   | 1,000 |     19,576 |        1 |
+| **比率** | | **212.6x** | **6.0x** |
+
+N=10 で 4,119,771 サイクル、N=100 で 4,124,252 サイクルと、入力サイズに関係なくほぼ一定の ~410万サイクルが消費されていた。これは `initialize_Init()` による 392 モジュールの初期化コストである。
+
+旧方式と現方式の比較:
+
+| | 旧方式 | 現方式 |
+|--|:--|:--|
+| Lean 型 | `Nat`（ヒープ割り当て） | `UInt32`（機械整数） |
+| FFI | `ByteArray` マーシャリング（往復12段階） | `uint32_t` 直接（変換なし） |
+| Init 初期化 | あり（~410万サイクル） | なし |
+| Lean/Rust 比率 | ~1,000x | ~0.94x |
 | ELF サイズ | 5.1 MB (19.2x) | 1.5 MB (5.6x) |
 | セグメント数 | 5〜6 | 1 |
-| FFI | ByteArray マーシャリング | `uint32_t` 直接 |
-
-### 旧方式の結果（参考）
-
-Init ライブラリを初期化する方式（Nat + ByteArray FFI）の結果。
-
-| ゲスト | N | ユーザーサイクル | セグメント | 実行時間 |
-|--------|------:|-----------:|---------:|---------:|
-| Lean   |    10 |  4,119,771 |        5 |   12.3s  |
-| Rust   |    10 |      3,736 |        1 |    41ms  |
-| **倍率** | | **1,102.7x** | **5.0x** | **~300x** |
-| | | | | |
-| Lean   |   100 |  4,124,252 |        5 |   14.6s  |
-| Rust   |   100 |      5,176 |        1 |    39ms  |
-| **倍率** | | **796.8x** | **5.0x** | **~375x** |
-| | | | | |
-| Lean   | 1,000 |  4,161,410 |        6 |   10.4s  |
-| Rust   | 1,000 |     19,576 |        1 |    74ms  |
-| **倍率** | | **212.6x** | **6.0x** | **~140x** |
-
-**旧方式のオーバーヘッド内訳:**
-
-| 要因 | 推定サイクル | 寄与率 |
-|------|----------:|-------:|
-| Init 初期化（392モジュール） | ~4,100,000 | ~99% |
-| Nat ヒープ/RC オーバーヘッド | ~50/再帰 | N 依存 |
-| データマーシャリング（往復12段階） | ~数百 | <0.1% |
 
 ## 再現手順
 
 ```bash
-# Environment variables
 export RISC0_TOOLCHAIN_PATH="$HOME/.risc0/toolchains/v2024.1.5-cpp-aarch64-apple-darwin/riscv32im-osx-arm64"
 export LEAN_RISC0_PATH="$HOME/.lean-risc0"
 
-# Build both guests
-just build
-
-# Verify correctness
-target/release/host 100  # → 5050
-
-# Execute benchmark
+just clean && just build
+target/release/host 100   # → 5050
 just bench-execute
-
-# Prove benchmark (much slower)
-just bench-prove
 ```
-
-## 参照ファイル
-
-| ファイル | 説明 |
-|---------|------|
-| `guest/Guest/Basic.lean` | Lean ビジネスロジック（`sum` 関数、UInt32） |
-| `guest/Guest.lean` | Lean エントリポイント（`@[export risc0_main]`、UInt32 直接） |
-| `guest_build/risc0_ir/Guest/Basic.c` | コンパイル済み C IR: `uint32_t l_sum(uint32_t)` |
-| `methods/guest/risc0_lean.c` | C ラッパー: Init 初期化なし、直接 FFI |
-| `methods/guest/src/main.rs` | Rust ゲスト（Lean）: `lean_simple_risc0_main` への直接 FFI |
-| `methods/guest-rust/src/main.rs` | Rust ゲスト（純粋）: 直接的な `sum` 実装 |
-| `methods/guest/shims.c` | zkVM シム: 64 MB ヒープの `_sbrk` |
-| `methods/guest/build.rs` | リンカ設定: libInit.a、libLean.a、libGuest.a |
-| `host/src/bin/benchmark.rs` | ベンチマークハーネス: サイクル計測 + 比較 |
