@@ -3,8 +3,17 @@ name = "host"
 version = "0.1.0"
 edition = "2021"
 
+[[bin]]
+name = "host"
+path = "src/main.rs"
+
+[[bin]]
+name = "benchmark"
+path = "src/bin/benchmark.rs"
+
 [dependencies]
 methods = { path = "../methods" }
 risc0-zkvm = { version = "^3.0.3" }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 serde = "1.0"
+clap = { version = "4", features = ["derive"] }

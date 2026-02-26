@@ -13,3 +13,15 @@ clean:
     rm -rf guest_build/risc0_ir/
     rm -f methods/guest/lib/libGuest.a
     cargo clean
+
+bench-execute:
+    cargo run --release --bin benchmark -- --mode execute
+
+bench-prove:
+    cargo run --release --bin benchmark -- --mode prove
+
+bench-profile-lean N="1000":
+    RISC0_PPROF_OUT=lean_profile.pb RISC0_DEV_MODE=1 cargo run --release --bin benchmark -- --guest lean --inputs {{N}}
+
+bench-profile-rust N="1000":
+    RISC0_PPROF_OUT=rust_profile.pb RISC0_DEV_MODE=1 cargo run --release --bin benchmark -- --guest rust --inputs {{N}}

@@ -1,4 +1,6 @@
 .DS_Store
 Cargo.lock
 methods/guest/Cargo.lock
+methods/guest-rust/Cargo.lock
 target/
+*.pb
