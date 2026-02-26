@@ -7,3 +7,4 @@ import Guest.Eth2.Crypto
 import Guest.Eth2.Containers
 import Guest.Eth2.Helpers
 import Guest.Eth2.Serialize
+import Guest.Eth2.Transition.StateTransition

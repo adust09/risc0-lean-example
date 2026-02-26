@@ -70,25 +70,25 @@ namespace Decode
 def uint64 : DecodeM UInt64 := fun data off =>
   if off + 8 > data.size then none
   else
-    let v :=
-      data.get! off       |>.toNat       |||
-      data.get! (off + 1) |>.toNat <<< 8  |||
-      data.get! (off + 2) |>.toNat <<< 16 |||
-      data.get! (off + 3) |>.toNat <<< 24 |||
-      data.get! (off + 4) |>.toNat <<< 32 |||
-      data.get! (off + 5) |>.toNat <<< 40 |||
-      data.get! (off + 6) |>.toNat <<< 48 |||
-      data.get! (off + 7) |>.toNat <<< 56
+    let b0 := (data.get! off).toNat
+    let b1 := (data.get! (off + 1)).toNat
+    let b2 := (data.get! (off + 2)).toNat
+    let b3 := (data.get! (off + 3)).toNat
+    let b4 := (data.get! (off + 4)).toNat
+    let b5 := (data.get! (off + 5)).toNat
+    let b6 := (data.get! (off + 6)).toNat
+    let b7 := (data.get! (off + 7)).toNat
+    let v := b0 ||| (b1 <<< 8) ||| (b2 <<< 16) ||| (b3 <<< 24) ||| (b4 <<< 32) ||| (b5 <<< 40) ||| (b6 <<< 48) ||| (b7 <<< 56)
     some (v.toUInt64, off + 8)
 
 def uint32 : DecodeM UInt32 := fun data off =>
   if off + 4 > data.size then none
   else
-    let v :=
-      data.get! off       |>.toNat       |||
-      data.get! (off + 1) |>.toNat <<< 8  |||
-      data.get! (off + 2) |>.toNat <<< 16 |||
-      data.get! (off + 3) |>.toNat <<< 24
+    let b0 := (data.get! off).toNat
+    let b1 := (data.get! (off + 1)).toNat
+    let b2 := (data.get! (off + 2)).toNat
+    let b3 := (data.get! (off + 3)).toNat
+    let v := b0 ||| (b1 <<< 8) ||| (b2 <<< 16) ||| (b3 <<< 24)
     some (v.toUInt32, off + 4)
 
 def uint8 : DecodeM UInt8 := fun data off =>

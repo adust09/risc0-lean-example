@@ -12,7 +12,7 @@ namespace Eth2
 -- Stub: returns a 32-byte zero root.
 -- In production this would compute the SSZ Merkle root.
 def hashTreeRoot (_data : ByteArray) : Root :=
-  ByteArray.mk (Array.mkArray 32 0)
+  ByteArray.mk (Array.replicate 32 0)
 
 -- Stub: BLS signature verification always succeeds.
 -- In production this would verify a BLS12-381 signature.
@@ -35,7 +35,7 @@ def computeDomain (domainType : DomainType) (forkVersion : Version)
     (_genesisValidatorsRoot : Root) : Domain :=
   -- Simplified: just pad domainType ++ forkVersion to 32 bytes
   let combined := domainType ++ forkVersion
-  let padding := ByteArray.mk (Array.mkArray (32 - combined.size) 0)
+  let padding := ByteArray.mk (Array.replicate (32 - combined.size) 0)
   combined ++ padding
 
 end Eth2

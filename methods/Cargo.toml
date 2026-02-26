@@ -7,4 +7,4 @@ edition = "2021"
 risc0-build = { version = "^3.0.3" }
 
 [package.metadata.risc0]
-methods = ["guest", "guest-rust"]
+methods = ["guest", "guest-rust", "guest-eth2-noinit", "guest-eth2-init", "guest-rust-eth2"]

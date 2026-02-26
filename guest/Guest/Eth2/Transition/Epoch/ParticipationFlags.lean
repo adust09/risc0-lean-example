@@ -11,7 +11,7 @@ namespace Eth2
 def processParticipationFlagUpdates (state : BeaconState) : BeaconState :=
   { state with
     previousEpochParticipation := state.currentEpochParticipation
-    currentEpochParticipation := Array.mkArray state.validators.size 0
+    currentEpochParticipation := Array.replicate state.validators.size 0
   }
 
 end Eth2

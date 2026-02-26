@@ -5,6 +5,11 @@
   Reference: https://eth2book.info/latest/part3/config/types/
 -/
 
+-- ByteArray lacks Repr in Lean 4.22.0; provide one so structures can derive Repr.
+instance : Repr ByteArray where
+  reprPrec ba _ :=
+    .text s!"ByteArray({ba.size} bytes)"
+
 namespace Eth2
 
 -- Numeric aliases (SSZ uint64 → Lean UInt64)

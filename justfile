@@ -5,6 +5,8 @@ build:
     rsync -a --prune-empty-dirs --include '*/' --include '*.c' --exclude '*' guest/.lake/build/ir/ guest/.lake/packages/*/.lake/build/ir/ guest_build/risc0_ir/
     cd guest_build && just build
     cp guest_build/_build/libGuest.a methods/guest/lib/libGuest.a
+    cp guest_build/_build/libGuest.a methods/guest-eth2-noinit/lib/libGuest.a
+    cp guest_build/_build/libGuest.a methods/guest-eth2-init/lib/libGuest.a
     cargo build --release
 
 clean:
@@ -12,6 +14,8 @@ clean:
     cd guest_build && just clean
     rm -rf guest_build/risc0_ir/
     rm -f methods/guest/lib/libGuest.a
+    rm -f methods/guest-eth2-noinit/lib/libGuest.a
+    rm -f methods/guest-eth2-init/lib/libGuest.a
     cargo clean
 
 bench-execute:
@@ -25,3 +29,9 @@ bench-profile-lean N="1000":
 
 bench-profile-rust N="1000":
     RISC0_PPROF_OUT=rust_profile.pb RISC0_DEV_MODE=1 cargo run --release --bin benchmark -- --guest rust --inputs {{N}}
+
+bench-eth2-execute:
+    RISC0_DEV_MODE=1 cargo run --release --bin benchmark -- --suite eth2 --mode execute
+
+bench-eth2-prove:
+    cargo run --release --bin benchmark -- --suite eth2 --mode prove
