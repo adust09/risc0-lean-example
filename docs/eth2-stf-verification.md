@@ -4,15 +4,9 @@
 
 Ethereum Consensus Layer（Beacon Chain）の state transition function を Lean 4 で実装し、RISC Zero zkVM 上で Rust 実装と比較検証した。
 
-| 問い | 回答 |
-|------|------|
-| Init なしで ETH2 STF は動くか？ | **動かない**。closed term が未初期化で NULL dereference が発生 |
-| Init ありで動くか？ | **動く**。ただし Init_Data ワークアラウンドが必要 |
-| Lean と Rust で同一出力か？ | **バイト単位で完全一致** |
-| サイクル数オーバーヘッドは？ | **2.1x〜2.4x**（バリデータ数に依存） |
-| ELF サイズオーバーヘッドは？ | **17.7x**（主に Init ライブラリ 392 モジュールの静的リンク） |
+Lean で書いた ETH2 STF は zkVM 上で正しく動作し、Rust 実装とバイト単位で完全に同一の出力を生成する。ただし Init ライブラリの初期化は必須である。Init をスキップすると、`Array`・`String`・`ByteArray`・`default` 等の closed term が BSS 上で NULL のまま残り、NULL dereference でクラッシュする。`UInt32` 等のアンボックス型のみで完結する sum 関数とは本質的に異なり、実用的な STF では Init を避けられない。また Init 初期化の過程で `initialize_Init_Data` が zkVM 上で失敗するため、事前に呼び出して `_G_initialized` フラグをセットするワークアラウンドが必要になる。
 
-Lean で書いた ETH2 STF は zkVM 上で正しく動作する。ただし Init 初期化は必須であり、スキップすると `Array`・`String`・`ByteArray`・`default` 等の closed term が NULL のままとなりクラッシュする。`UInt32` 等のアンボックス型のみで完結する sum 関数とは本質的に異なり、実用的な STF では Init を避けられない。
+パフォーマンス面では、Lean の zkVM サイクル数は Rust の 2.1x〜2.4x（バリデータ数に依存）、ELF サイズは 17.7x となる。サイクル数オーバーヘッドの主因は Init の固定コスト（~15M cycles）と、永続データ構造の参照カウント操作である。
 
 ---
 
