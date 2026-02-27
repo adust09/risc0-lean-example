@@ -6,3 +6,5 @@ target/
 *.pb
 .serena/
 stf.md
+# Build artifacts — libGuest.a is copied by `just build`
+**/lib/libGuest.a

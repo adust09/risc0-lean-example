@@ -31,7 +31,7 @@ bench-profile-rust N="1000":
     RISC0_PPROF_OUT=rust_profile.pb RISC0_DEV_MODE=1 cargo run --release --bin benchmark -- --guest rust --inputs {{N}}
 
 bench-eth2-execute:
-    RISC0_DEV_MODE=1 cargo run --release --bin benchmark -- --suite eth2 --mode execute
+    RISC0_DEV_MODE=1 cargo run --release --bin benchmark -- --suite eth2 --mode execute --inputs 10 --guest all
 
 bench-eth2-prove:
-    cargo run --release --bin benchmark -- --suite eth2 --mode prove
+    cargo run --release --bin benchmark -- --suite eth2 --mode prove --inputs 10 --guest all

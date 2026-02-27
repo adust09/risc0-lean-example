@@ -22,7 +22,12 @@ def risc0_main_eth2 (input : @& ByteArray) : ByteArray :=
     | some (signedBlock, _) =>
       match Eth2.stateTransition preState signedBlock with
       | .ok postState => Eth2.serializeBeaconState postState
-      | .error _ => ByteArray.mk #[0xFD]  -- STF error marker
+      | .error errMsg =>
+        -- Encode error: 0xFD prefix + UTF-8 error message
+        let errBytes := errMsg.toUTF8
+        let result := ByteArray.emptyWithCapacity (1 + errBytes.size)
+        let result := result.push 0xFD
+        errBytes.foldl (init := result) fun acc b => acc.push b
 where
   decodeSignedBlock (data : ByteArray) (off : Nat) : Option (Eth2.SignedBeaconBlock × Nat) := do
     -- Decode BeaconBlock fields
