@@ -1,34 +1,34 @@
-# ETH2 前提: Lean IR トレース検証アプローチのフィジビリティ検証
+# ETH2 Prerequisite: Feasibility Study of Lean IR Trace Verification Approach
 
-## 目的
+## Purpose
 
-Lean4 を C に落として zkVM ゲストで直接実行する現在方式は、Init 初期化コストが大きく改善余地が小さい。  
-そこで、**Lean IR の実行トレースを zkVM で検証する方式**（`ir_interpreter.cpp` 参考）の実用性を、ETH2 state transition を前提に評価する。
+The current approach of compiling Lean 4 to C and executing it directly in the zkVM guest incurs high Init initialization costs with limited room for improvement.
+This document evaluates the practicality of an **alternative approach that verifies Lean IR execution traces within the zkVM** (referencing `ir_interpreter.cpp`), assuming an ETH2 state transition workload.
 
-検証日: **2026-03-06**
+Date of evaluation: **2026-03-06**
 
 ---
 
-## 前提と検証スコープ
+## Scope and Assumptions
 
-- 対象実装はこのリポジトリの ETH2 STF（暗号はスタブ）
-- 比較対象:
+- Target implementation is the ETH2 STF in this repository (crypto is stubbed)
+- Comparison targets:
   - Lean guest (no-init)
   - Lean guest (init)
   - Rust guest
-- 計測モード: execute（`RISC0_DEV_MODE=1`）
-- 入力の `N` は **validator 数 (`num_validators`)**
-  - `N` は Lean 関数の直接引数ではなく、host 側で生成する `BeaconState` のサイズを決めるベンチ用パラメータ
+- Measurement mode: execute (`RISC0_DEV_MODE=1`)
+- `N` refers to **validator count (`num_validators`)**
+  - `N` is not a direct argument to Lean functions; it is a benchmark parameter that determines the size of the `BeaconState` generated on the host side
 
-関連箇所:
-- benchmark 入力定義: `host/src/bin/benchmark.rs`
-- Lean ETH2 エントリポイント: `guest/Guest.lean`
+Related code:
+- Benchmark input definition: `host/src/bin/benchmark.rs`
+- Lean ETH2 entry point: `guest/Guest.lean`
 
 ---
 
-## 実測結果
+## Measured Results
 
-コマンド:
+Command:
 
 ```bash
 LEAN_RISC0_PATH="$HOME/.lean-risc0" \
@@ -44,90 +44,89 @@ cargo run --release --bin benchmark -- --suite eth2 --mode execute --inputs 1,10
 | 100 | CRASH (`LoadAccessFault`) | 35,281,299 | 14,446,747 | 2.4x |
 | 1000 | CRASH (`LoadAccessFault`) | 130,527,911 | 35,237,893 | 3.7x |
 
-観測:
-- no-init は ETH2 では全ケース失敗（既存調査どおり）
-- Lean(init) は Rust 比で入力が増えるほど不利になる（2.0x -> 3.7x）
+Observations:
+- no-init fails in all ETH2 cases (consistent with prior investigation)
+- Lean(init) becomes increasingly disadvantaged relative to Rust as input grows (2.0x → 3.7x)
 
 ---
 
-## なぜ validator 数が STF コストに効くか
+## Why Validator Count Affects STF Cost
 
-ETH2 STF は validator 集合を直接走査・更新するため、validator 数 `N` が計算量に直結する。
+The ETH2 STF directly iterates over and updates the validator set, so validator count `N` directly determines computational cost.
 
-主因:
+Main factors:
 
-1. 状態デコード/エンコードが N に比例
-- `validators`, `balances`, participation flags, `inactivityScores` など可変長配列を処理
-- 参照: `guest/Guest/Eth2/Serialize.lean`
+1. State decoding/encoding is proportional to N
+- Processes variable-length arrays: `validators`, `balances`, participation flags, `inactivityScores`, etc.
+- Reference: `guest/Guest/Eth2/Serialize.lean`
 
-2. proposer/active validator 計算が N 走査
-- `getActiveValidatorIndices` は validators を全走査
-- 参照: `guest/Guest/Eth2/Helpers.lean`
+2. Proposer/active validator computation scans all N validators
+- `getActiveValidatorIndices` performs a full scan of validators
+- Reference: `guest/Guest/Eth2/Helpers.lean`
 
-3. epoch 処理の各サブ関数が N 依存ループ
-- rewards/penalties, inactivity, effective balance, registry updates など
-- 参照:
+3. Each epoch processing sub-function has N-dependent loops
+- rewards/penalties, inactivity, effective balance, registry updates, etc.
+- References:
   - `guest/Guest/Eth2/Transition/Epoch/RewardsAndPenalties.lean`
   - `guest/Guest/Eth2/Transition/Epoch/InactivityUpdates.lean`
   - `guest/Guest/Eth2/Transition/Epoch/EffectiveBalances.lean`
   - `guest/Guest/Eth2/Transition/Epoch/RegistryUpdates.lean`
 
-補足:
-- 今回のベンチ入力（slot 100 -> 101）は epoch 境界を跨がないため、主に decode/encode と block 側コストが支配的。
-- それでも N 増加に伴う差分コストは明確に増えている。
+Note:
+- The benchmark input (slot 100 → 101) does not cross an epoch boundary, so decode/encode and block-side costs are dominant.
+- Even so, the incremental cost from increasing N is clearly visible.
 
 ---
 
-## IR トレース検証方式の評価（ETH2 前提）
+## Evaluation of IR Trace Verification Approach (ETH2 Context)
 
-### 結論
+### Conclusion
 
-**フルスコープ（ETH2 全体）の IR トレース検証は、現時点では実用性が低い。**
+**Full-scope (entire ETH2) IR trace verification is not practical at this time.**
 
-理由:
+Reasons:
 
-1. IR 実行意味論の再現コストが高い
-- Lean IR は `inc/dec/del/reset/reuse/case/jmp` 等を含み、RC とヒープ更新を厳密再現する必要がある
-- 参照:
-  - IR 命令定義: Lean `src/Lean/Compiler/IR/Basic.lean`
-  - 参照実装: `src/library/ir_interpreter.cpp`
+1. High cost of reproducing IR execution semantics
+- Lean IR includes `inc/dec/del/reset/reuse/case/jmp` etc., requiring faithful reproduction of RC and heap updates
+- References:
+  - IR instruction definitions: Lean `src/Lean/Compiler/IR/Basic.lean`
+  - Reference implementation: `src/library/ir_interpreter.cpp`
 
-2. 参照実装はホスト依存機能を前提
-- `dlsym/GetProcAddress` ベースの symbol 解決など、zkVM へそのまま載せられない部分が多い
+2. The reference implementation depends on host-specific functionality
+- Symbol resolution via `dlsym/GetProcAddress` and other features that cannot be directly ported to the zkVM
 
-3. トレース入力そのもののコスト
-- zkVM では proving cost は cycle 数に比例し、入力/メモリアクセスにもコストが乗る
-- 大規模トレースを投入すると、検証ロジック以前に I/O とページングの負担が大きい
-- 参照: RISC Zero Guest Optimization Guide
-
----
-
-## 実用的な提案
-
-1. 本番経路は当面 Rust guest を維持
-- 証明コスト最小化を優先
-
-2. Lean は仕様源 + 差分検証に使う
-- Lean 実装と Rust 実装の出力一致テストを継続
-
-3. IR トレース方式は限定 PoC で段階評価
-- 対象を `processSlots` 等の部分関数に限定
-- 最小 opcode セットだけで verifier 実装
-- 先に Go/No-Go 指標を固定（例: cycles/trace size 上限）
-
-4. 指標未達ならフル ETH2 展開は中止
-- 早期に技術的撤退ラインを設定
+3. Cost of the trace input itself
+- In the zkVM, proving cost is proportional to cycle count, and input/memory access also incurs cost
+- Feeding large traces results in significant I/O and paging overhead before any verification logic runs
+- Reference: RISC Zero Guest Optimization Guide
 
 ---
 
-## 参照
+## Practical Recommendations
 
-- Lean IR interpreter 実装  
+1. Maintain Rust guest as the production path for now
+- Prioritize minimizing proving cost
+
+2. Use Lean as the specification source + differential verification
+- Continue output-matching tests between the Lean and Rust implementations
+
+3. Evaluate IR trace approach with a limited PoC in stages
+- Restrict scope to partial functions such as `processSlots`
+- Implement the verifier with a minimal opcode set only
+- Establish Go/No-Go criteria first (e.g., cycles/trace size upper bounds)
+
+4. Abandon full ETH2 deployment if criteria are not met
+- Set a technical exit line early
+
+---
+
+## References
+
+- Lean IR interpreter implementation
   https://github.com/leanprover/lean4/blob/master/src/library/ir_interpreter.cpp
-- Lean IR 命令定義  
+- Lean IR instruction definitions
   https://github.com/leanprover/lean4/blob/master/src/Lean/Compiler/IR/Basic.lean
-- RISC Zero Guest Optimization Guide  
+- RISC Zero Guest Optimization Guide
   https://github.com/risc0/risc0/blob/main/website/api/zkvm/optimization.md
-- 本リポジトリ既存検証  
+- Prior verification in this repository
   `docs/eth2-stf-verification.md`
-
