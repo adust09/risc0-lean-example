@@ -129,4 +129,4 @@ Reasons:
 - RISC Zero Guest Optimization Guide
   https://github.com/risc0/risc0/blob/main/website/api/zkvm/optimization.md
 - Prior verification in this repository
-  `docs/eth2-stf-verification.md`
+  `docs/eth2-stf-direct-execution.md`
