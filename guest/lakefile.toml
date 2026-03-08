@@ -4,3 +4,7 @@ defaultTargets = ["Guest"]
 
 [[lean_lib]]
 name = "Guest"
+
+[[lean_exe]]
+name = "ir-dump"
+root = "IrDump"

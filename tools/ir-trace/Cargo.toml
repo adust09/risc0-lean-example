@@ -1,0 +1,24 @@
+[package]
+name = "ir-trace"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "ir-trace"
+path = "src/main.rs"
+
+[[bin]]
+name = "gen-eth2-input"
+path = "src/bin/gen_eth2_input.rs"
+
+[[bin]]
+name = "filter-ir"
+path = "src/bin/filter_ir.rs"
+
+[dependencies]
+ir-trace-common = { path = "../../ir-trace-common" }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = { version = "1.0", features = ["unbounded_depth"] }
+bincode = "1.3"
+sha2 = "0.10"
+clap = { version = "4", features = ["derive"] }
