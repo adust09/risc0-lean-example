@@ -1,4 +1,7 @@
+use std::collections::HashMap;
+
 use ir_trace_common::trace_types::{TraceStep, ValueId};
+use ir_trace_common::value::FlatValue;
 
 use crate::ir_types::{Alt, Arg, FnBody, IRType};
 
@@ -9,7 +12,8 @@ use super::value::Value;
 pub struct BodyExecutor<'a> {
     pub frame: &'a mut CallFrame,
     pub trace_steps: &'a mut Vec<TraceStep>,
-    pub value_table: &'a mut Vec<Value>,
+    pub value_table: &'a mut Vec<FlatValue>,
+    pub value_dedup: &'a mut HashMap<FlatValue, ValueId>,
 }
 
 impl<'a> BodyExecutor<'a> {
@@ -21,9 +25,7 @@ impl<'a> BodyExecutor<'a> {
     }
 
     fn register_value(&mut self, val: &Value) -> ValueId {
-        let id = self.value_table.len() as ValueId;
-        self.value_table.push(val.clone());
-        id
+        val.flatten_into(self.value_table, self.value_dedup)
     }
 
     fn eval_expr_inline_with_ty(
@@ -35,6 +37,7 @@ impl<'a> BodyExecutor<'a> {
             frame: self.frame,
             trace_steps: self.trace_steps,
             value_table: self.value_table,
+            value_dedup: self.value_dedup,
         };
         evaluator.eval_with_ty(expr, ty)
     }

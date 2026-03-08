@@ -179,8 +179,7 @@ fn run_trace(
     let result = interp.call_function(&args.entry, vec![input_value]);
 
     // Build trace
-    let output_value_id = interp.value_table.len() as u32;
-    interp.value_table.push(result.clone());
+    let output_value_id = interp.register_value(&result);
 
     let trace = build_trace(
         &interp,

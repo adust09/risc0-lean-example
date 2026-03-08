@@ -7,6 +7,7 @@ pub mod value;
 use std::collections::HashMap;
 
 use ir_trace_common::trace_types::{TraceStep, ValueId};
+use ir_trace_common::value::FlatValue;
 
 use crate::ir_types::{Decl, FnBody};
 
@@ -20,9 +21,10 @@ const MAX_CALL_DEPTH: usize = 10000;
 pub struct Interpreter {
     pub decls: HashMap<String, Decl>,
     pub trace_steps: Vec<TraceStep>,
-    pub value_table: Vec<Value>,
+    pub value_table: Vec<FlatValue>,
     pub fn_name_table: Vec<String>,
     fn_name_index: HashMap<String, u32>,
+    value_dedup: HashMap<FlatValue, ValueId>,
     call_depth: usize,
     pub extern_stubs: HashMap<String, Box<dyn Fn(&[Value]) -> Value>>,
 }
@@ -35,6 +37,7 @@ impl Interpreter {
             value_table: Vec::new(),
             fn_name_table: Vec::new(),
             fn_name_index: HashMap::new(),
+            value_dedup: HashMap::new(),
             call_depth: 0,
             extern_stubs: HashMap::new(),
         }
@@ -58,10 +61,8 @@ impl Interpreter {
         id
     }
 
-    fn register_value(&mut self, val: &Value) -> ValueId {
-        let id = self.value_table.len() as ValueId;
-        self.value_table.push(val.clone());
-        id
+    pub fn register_value(&mut self, val: &Value) -> ValueId {
+        val.flatten_into(&mut self.value_table, &mut self.value_dedup)
     }
 
     pub fn call_function(&mut self, name: &str, args: Vec<Value>) -> Value {
@@ -189,6 +190,7 @@ impl Interpreter {
                     frame,
                     trace_steps: &mut self.trace_steps,
                     value_table: &mut self.value_table,
+                    value_dedup: &mut self.value_dedup,
                 };
                 executor.exec(&current_body)
             };

@@ -1,4 +1,7 @@
+use std::collections::HashMap;
+
 use ir_trace_common::trace_types::{TraceStep, ValueId};
+use ir_trace_common::value::FlatValue;
 
 use crate::ir_types::{Arg, Expr, IRType, LitValue};
 use super::stack::CallFrame;
@@ -7,7 +10,8 @@ use super::value::Value;
 pub struct ExprEvaluator<'a> {
     pub frame: &'a mut CallFrame,
     pub trace_steps: &'a mut Vec<TraceStep>,
-    pub value_table: &'a mut Vec<Value>,
+    pub value_table: &'a mut Vec<FlatValue>,
+    pub value_dedup: &'a mut HashMap<FlatValue, ValueId>,
 }
 
 impl<'a> ExprEvaluator<'a> {
@@ -19,9 +23,7 @@ impl<'a> ExprEvaluator<'a> {
     }
 
     pub fn register_value(&mut self, val: &Value) -> ValueId {
-        let id = self.value_table.len() as ValueId;
-        self.value_table.push(val.clone());
-        id
+        val.flatten_into(self.value_table, self.value_dedup)
     }
 
     pub fn eval_with_ty(&mut self, expr: &Expr, ty: &IRType) -> Value {

@@ -16,13 +16,29 @@ Instead of compiling Lean to C/RISC-V, it interprets the Lean lambda-RC IR on th
 
 ## IR Trace Detailed Results
 
-### N=10 (3 runs, median)
+### N=10 — Before Dedup (baseline)
 
 ```
 === Timing (3 runs) ===
   Median: 7.71s
   Min:    7.62s
   Max:    11.89s
+
+=== Memory ===
+  Value table: 639,836 entries
+
+=== Output ===
+  Size: 78,522 bytes
+  Status: Success
+```
+
+### N=10 — After Dedup (content-hash)
+
+```
+=== Timing (3 runs) ===
+  Median: 9.96s
+  Min:    9.94s
+  Max:    10.39s
 
 === Trace Steps ===
   Total:         238,049
@@ -34,20 +50,36 @@ Instead of compiling Lean to C/RISC-V, it interprets the Lean lambda-RC IR on th
   SetResult:        8,754 (3.7%)
 
 === Memory ===
-  Value table: 639,836 entries
+  Value table: 43,255 entries
 
 === Output ===
   Size: 78,522 bytes
-  Status: Success
+  Status: Success (first byte: 0x40)
 ```
 
-### N=100 (3 runs, median)
+### N=100 — Before Dedup (baseline)
 
 ```
 === Timing (3 runs) ===
   Median: 11.19s
   Min:    11.18s
   Max:    16.44s
+
+=== Memory ===
+  Value table: 867,320 entries
+
+=== Output ===
+  Size: 91,752 bytes
+  Status: Success
+```
+
+### N=100 — After Dedup (content-hash)
+
+```
+=== Timing (3 runs) ===
+  Median: 14.28s
+  Min:    14.24s
+  Max:    14.74s
 
 === Trace Steps ===
   Total:         324,741
@@ -59,20 +91,34 @@ Instead of compiling Lean to C/RISC-V, it interprets the Lean lambda-RC IR on th
   SetResult:       10,108 (3.1%)
 
 === Memory ===
-  Value table: 867,320 entries
+  Value table: 60,451 entries
 
 === Output ===
   Size: 91,752 bytes
-  Status: Success
+  Status: Success (first byte: 0x40)
 ```
+
+## Value Dedup Impact
+
+Content-hash dedup (`HashMap<Value, ValueId>`) deduplicates identical values in the value_table.
+
+| Metric | N=10 before | N=10 after | Reduction | N=100 before | N=100 after | Reduction |
+|--------|-------------|------------|-----------|--------------|-------------|-----------|
+| Value table entries | 639,836 | 43,255 | **14.8x** | 867,320 | 60,451 | **14.3x** |
+| Trace size (bincode) | 8.14 GB | 884 MB | **9.2x** | — | — | — |
+| Wall time (median) | 7.71s | 9.96s | +29% | 11.19s | 14.28s | +28% |
+| Total steps | 238,049 | 238,049 | same | 324,741 | 324,741 | same |
+| Output size | 78,522 B | 78,522 B | same | 91,752 B | 91,752 B | same |
+
+The ~14-15x value_table reduction is consistent across inputs. Wall time increased ~28-29% due to HashMap lookup overhead — an acceptable trade-off given the 9x+ trace size reduction that unblocks zkVM E2E.
 
 ## Scaling Characteristics
 
 | Metric | N=10 | N=100 | Ratio (N=100/N=10) |
 |--------|------|-------|-------------------|
 | Total steps | 238,049 | 324,741 | 1.36x |
-| Wall time (median) | 7.71s | 11.19s | 1.45x |
-| Value table | 639,836 | 867,320 | 1.36x |
+| Wall time (median, dedup) | 9.96s | 14.28s | 1.43x |
+| Value table (dedup) | 43,255 | 60,451 | 1.40x |
 | PrimResult steps | 100,490 | 157,376 | 1.57x |
 | Output size | 78,522 B | 91,752 B | 1.17x |
 
@@ -108,46 +154,47 @@ Trace serialization was switched from JSON to bincode to reduce trace size.
 ### Sum Example (E2E verified)
 
 ```
-=== IR Trace zkVM Benchmark ===
+=== IR Trace zkVM Benchmark (with dedup) ===
 Mode: execute
-Trace: 3,843 bytes (bincode)
+Trace: 1,975 bytes (bincode)
 
-User Cycles:    653,173
+User Cycles:    357,773
 Segments:       1
-Wall Time:      76.18ms
+Wall Time:      45.85ms
 
 === Output ===
 Size: 8 bytes
 Status: Success (first byte: 0x37)
 ```
 
-The sum example (N=10, scalar input) completes E2E successfully with 653K cycles.
+The sum example (N=10, scalar input) completes E2E successfully with 358K cycles.
+With dedup, trace shrank from 3,843 → 1,975 bytes (49% reduction) and cycles from 653K → 358K (45% reduction).
 
-### ETH2 N=10 (blocked)
+### ETH2 N=10
 
 | Format | Trace size | Status |
 |--------|-----------|--------|
 | JSON (serde_json) | ~15 GB | Too large |
-| bincode | 8.14 GB | `TryFromIntError` — exceeds zkVM u32 write limit (~4GB) |
+| bincode (no dedup) | 8.14 GB | `TryFromIntError` — exceeds zkVM u32 write limit (~4GB) |
+| bincode (with dedup) | **884 MB** | Under 4GB limit — zkVM E2E unblocked |
 
-Root cause: the value_table contains 639,837 entries including large ByteArray and Object values.
-The bincode compression ratio was only ~1.8x (not the expected 5-10x), because the dominant cost is
-serializing complex nested Value structures, not JSON overhead.
+Value dedup reduced the value_table from 639,836 → 43,255 entries (14.8x), bringing the
+bincode trace from 8.14 GB down to 884 MB (9.2x reduction). zkVM E2E execution is now feasible.
 
-See [problem.md](./problem.md) for detailed analysis and proposed solutions.
+ETH2 N=10 zkVM cycle measurement: pending (executor running).
 
 ### Commands
 
 ```bash
-# Sum example (works)
+# Sum example
 cargo run --release -p ir-trace --bin ir-trace -- \
-  --ir ir_program.json --input /dev/null \
-  --entry risc0_main --scalar-input 10 --output /tmp/sum_trace.bin
+  --ir ir_program_sum.json --input /dev/null \
+  --entry risc0_main --scalar-input 10 --output /tmp/sum_trace_dedup.bin
 RISC0_DEV_MODE=1 cargo run --release --bin ir-trace-host -- \
-  --ir ir_program.json --input /dev/null --scalar-input 10 \
-  --trace /tmp/sum_trace.bin --entry risc0_main --mode execute
+  --ir ir_program_sum.json --input /dev/null --scalar-input 10 \
+  --trace /tmp/sum_trace_dedup.bin --entry risc0_main --mode execute
 
-# ETH2 cycle measurement (currently blocked by trace size)
+# ETH2 N=10 cycle measurement (now feasible with dedup)
 just bench-ir-trace-cycles 10
 ```
 
@@ -155,5 +202,6 @@ just bench-ir-trace-cycles 10
 
 - IR Trace skips Init entirely — the interpreter resolves declarations directly from the IR JSON
 - Trace serialization uses bincode (previously JSON, which produced ~15GB files)
-- Host-side wall-clock time is measured (not directly comparable to zkVM cycles, but shows interpreter overhead)
-- Run 1 is consistently slower (11.9s / 16.4s) due to cold caches; runs 2-3 are stable (~7.6s / ~11.2s)
+- Value dedup uses content-hash (`HashMap<Value, ValueId>`) to deduplicate identical values — ~14-15x reduction in value_table entries
+- Host-side wall time increased ~28% with dedup due to HashMap hashing overhead, but trace size decreased 9x
+- Run 1 is consistently slower due to cold caches; runs 2-3 are stable

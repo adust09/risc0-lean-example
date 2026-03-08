@@ -1,6 +1,6 @@
 use ir_trace_common::primitives::eval_primitive;
 use ir_trace_common::trace_types::{Trace, TraceStep};
-use ir_trace_common::value::Value;
+use ir_trace_common::value::{reconstruct, FlatValue};
 
 pub fn verify_trace(trace: &Trace) {
     let values = &trace.value_table;
@@ -8,17 +8,15 @@ pub fn verify_trace(trace: &Trace) {
     for (i, step) in trace.steps.iter().enumerate() {
         match step {
             TraceStep::PrimResult { op, args, result } => {
-                let arg_values: Vec<Value> = args
-                    .iter()
-                    .map(|id| values[*id as usize].clone())
-                    .collect();
+                // Reconstruct to Value for primitive evaluation
+                let arg_values: Vec<_> =
+                    args.iter().map(|id| reconstruct(values, *id)).collect();
                 let computed = eval_primitive(op, &arg_values);
+                let expected = reconstruct(values, *result);
                 assert_eq!(
-                    computed,
-                    values[*result as usize],
+                    computed, expected,
                     "Primitive verification failed at step {}: {:?}",
-                    i,
-                    op
+                    i, op
                 );
             }
             TraceStep::Branch {
@@ -49,7 +47,7 @@ pub fn verify_trace(trace: &Trace) {
                     i
                 );
                 match obj {
-                    Value::Object {
+                    FlatValue::Object {
                         fields: obj_fields,
                         scalars,
                         ..
@@ -62,11 +60,9 @@ pub fn verify_trace(trace: &Trace) {
                         );
                         for (j, field_id) in fields.iter().enumerate() {
                             assert_eq!(
-                                obj_fields[j],
-                                values[*field_id as usize],
+                                obj_fields[j], *field_id,
                                 "Ctor field {} mismatch at step {}",
-                                j,
-                                i
+                                j, i
                             );
                         }
                         assert_eq!(
@@ -81,10 +77,9 @@ pub fn verify_trace(trace: &Trace) {
             }
             TraceStep::ProjResult { obj, idx, result } => {
                 let obj_val = &values[*obj as usize];
-                let expected = obj_val.field(*idx as usize);
                 assert_eq!(
-                    *expected,
-                    values[*result as usize],
+                    obj_val.field_id(*idx as usize),
+                    Some(*result),
                     "Proj verification failed at step {}",
                     i
                 );
@@ -95,8 +90,8 @@ pub fn verify_trace(trace: &Trace) {
                 val,
                 result,
             } => {
-                let mut expected = values[*obj as usize].clone();
-                expected.set_field(*idx as usize, values[*val as usize].clone());
+                let obj_val = &values[*obj as usize];
+                let expected = obj_val.with_field_set(*idx as usize, *val);
                 assert_eq!(
                     expected,
                     values[*result as usize],

@@ -4,9 +4,8 @@ risc0_zkvm::guest::entry!(main);
 use risc0_zkvm::guest::env;
 use sha2::{Digest, Sha256};
 
-use ir_trace_common::primitives::eval_primitive;
-use ir_trace_common::trace_types::{Trace, TraceStep};
-use ir_trace_common::value::Value;
+use ir_trace_common::trace_types::Trace;
+use ir_trace_common::value::reconstruct;
 
 mod verifier;
 
@@ -37,7 +36,7 @@ fn main() {
     verifier::verify_trace(&trace);
 
     // 4. Commit the output
-    let output_value = &trace.value_table[trace.output_value_id as usize];
+    let output_value = reconstruct(&trace.value_table, trace.output_value_id);
     let output_bytes = output_value.serialize_to_bytes();
     let output_hash = sha256(&output_bytes);
     assert_eq!(
