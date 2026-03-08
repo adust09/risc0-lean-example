@@ -8,3 +8,9 @@ target/
 stf.md
 # Build artifacts — libGuest.a is copied by `just build`
 **/lib/libGuest.a
+
+# Generated IR and trace files
+ir_program.json
+ir_program_sum.json
+ir_program_filtered.json
+*.trace.json
