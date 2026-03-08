@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::value::Value;
+use crate::value::FlatValue;
 
 pub type ValueId = u32;
 
@@ -165,7 +165,7 @@ pub enum TraceStep {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Trace {
     pub header: TraceHeader,
-    pub value_table: Vec<Value>,
+    pub value_table: Vec<FlatValue>,
     pub steps: Vec<TraceStep>,
     pub fn_name_table: Vec<String>,
     pub output_value_id: ValueId,

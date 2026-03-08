@@ -1,6 +1,10 @@
+use std::collections::HashMap;
+
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+use crate::trace_types::ValueId;
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Value {
     Scalar(u64),
     Object {
@@ -120,5 +124,177 @@ impl Value {
                 json
             }
         }
+    }
+
+    pub fn flatten_into(
+        &self,
+        table: &mut Vec<FlatValue>,
+        dedup: &mut HashMap<FlatValue, ValueId>,
+    ) -> ValueId {
+        let flat = match self {
+            Value::Scalar(v) => FlatValue::Scalar(*v),
+            Value::Object {
+                tag,
+                fields,
+                scalars,
+            } => {
+                let field_ids: Vec<ValueId> =
+                    fields.iter().map(|f| f.flatten_into(table, dedup)).collect();
+                FlatValue::Object {
+                    tag: *tag,
+                    fields: field_ids,
+                    scalars: scalars.clone(),
+                }
+            }
+            Value::Array(elems) => {
+                let elem_ids: Vec<ValueId> =
+                    elems.iter().map(|e| e.flatten_into(table, dedup)).collect();
+                FlatValue::Array(elem_ids)
+            }
+            Value::ByteArray(data) => FlatValue::ByteArray(data.clone()),
+            Value::Closure {
+                fn_id,
+                arity,
+                captured,
+            } => {
+                let cap_ids: Vec<ValueId> = captured
+                    .iter()
+                    .map(|c| c.flatten_into(table, dedup))
+                    .collect();
+                FlatValue::Closure {
+                    fn_id: fn_id.clone(),
+                    arity: *arity,
+                    captured: cap_ids,
+                }
+            }
+            Value::Nat(bytes) => FlatValue::Nat(bytes.clone()),
+            Value::Str(s) => FlatValue::Str(s.clone()),
+            Value::Irrelevant => FlatValue::Irrelevant,
+        };
+
+        if let Some(&existing_id) = dedup.get(&flat) {
+            return existing_id;
+        }
+        let id = table.len() as ValueId;
+        table.push(flat.clone());
+        dedup.insert(flat, id);
+        id
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum FlatValue {
+    Scalar(u64),
+    Object {
+        tag: u16,
+        fields: Vec<ValueId>,
+        scalars: Vec<u8>,
+    },
+    Array(Vec<ValueId>),
+    ByteArray(Vec<u8>),
+    Closure {
+        fn_id: String,
+        arity: u32,
+        captured: Vec<ValueId>,
+    },
+    Nat(Vec<u8>),
+    Str(String),
+    Irrelevant,
+}
+
+impl FlatValue {
+    pub fn tag(&self) -> u16 {
+        match self {
+            FlatValue::Object { tag, .. } => *tag,
+            FlatValue::Scalar(v) => *v as u16,
+            _ => 0,
+        }
+    }
+
+    pub fn as_u64(&self) -> u64 {
+        match self {
+            FlatValue::Scalar(v) => *v,
+            FlatValue::Irrelevant => 0,
+            FlatValue::Object { tag, .. } => *tag as u64,
+            _ => panic!("as_u64 on non-scalar FlatValue: {:?}", self),
+        }
+    }
+
+    pub fn field_id(&self, idx: usize) -> Option<ValueId> {
+        match self {
+            FlatValue::Object { fields, .. } => fields.get(idx).copied(),
+            _ => None,
+        }
+    }
+
+    pub fn with_field_set(&self, idx: usize, val_id: ValueId) -> FlatValue {
+        match self {
+            FlatValue::Object {
+                tag,
+                fields,
+                scalars,
+            } => {
+                let mut new_fields = fields.clone();
+                if idx < new_fields.len() {
+                    new_fields[idx] = val_id;
+                }
+                FlatValue::Object {
+                    tag: *tag,
+                    fields: new_fields,
+                    scalars: scalars.clone(),
+                }
+            }
+            other => other.clone(),
+        }
+    }
+
+    pub fn serialize_to_bytes(&self, _table: &[FlatValue]) -> Vec<u8> {
+        match self {
+            FlatValue::ByteArray(data) => data.clone(),
+            FlatValue::Scalar(v) => v.to_le_bytes().to_vec(),
+            _ => {
+                // For complex types, serialize as JSON via serde
+                serde_json::to_vec(self).unwrap_or_default()
+            }
+        }
+    }
+}
+
+pub fn reconstruct(table: &[FlatValue], id: ValueId) -> Value {
+    match &table[id as usize] {
+        FlatValue::Scalar(v) => Value::Scalar(*v),
+        FlatValue::Object {
+            tag,
+            fields,
+            scalars,
+        } => {
+            let rec_fields: Vec<Value> = fields.iter().map(|fid| reconstruct(table, *fid)).collect();
+            Value::Object {
+                tag: *tag,
+                fields: rec_fields,
+                scalars: scalars.clone(),
+            }
+        }
+        FlatValue::Array(elems) => {
+            let rec_elems: Vec<Value> = elems.iter().map(|eid| reconstruct(table, *eid)).collect();
+            Value::Array(rec_elems)
+        }
+        FlatValue::ByteArray(data) => Value::ByteArray(data.clone()),
+        FlatValue::Closure {
+            fn_id,
+            arity,
+            captured,
+        } => {
+            let rec_captured: Vec<Value> =
+                captured.iter().map(|cid| reconstruct(table, *cid)).collect();
+            Value::Closure {
+                fn_id: fn_id.clone(),
+                arity: *arity,
+                captured: rec_captured,
+            }
+        }
+        FlatValue::Nat(bytes) => Value::Nat(bytes.clone()),
+        FlatValue::Str(s) => Value::Str(s.clone()),
+        FlatValue::Irrelevant => Value::Irrelevant,
     }
 }
