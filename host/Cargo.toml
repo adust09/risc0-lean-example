@@ -11,14 +11,9 @@ path = "src/main.rs"
 name = "benchmark"
 path = "src/bin/benchmark.rs"
 
-[[bin]]
-name = "ir-trace-host"
-path = "src/bin/ir_trace_host.rs"
-
 [dependencies]
 methods = { path = "../methods" }
 risc0-zkvm = { version = "^3.0.3" }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 serde = "1.0"
 clap = { version = "4", features = ["derive"] }
-sha2 = "0.10"
